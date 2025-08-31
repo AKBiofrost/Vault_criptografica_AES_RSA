@@ -14,11 +14,22 @@ public class SecureDatabaseHelper extends SQLiteOpenHelper {
     private static final String COL_DATA = "encrypted_data";
     private static final String COL_KEY = "public_key_rsa";
 
+    private static SecureDatabaseHelper instance;
+
     public SecureDatabaseHelper(Context context) {
         super(context, DB_NAME, null, VERSION);
         this.context = context.getApplicationContext();
         SQLiteDatabase.loadLibs(context);
     }
+
+    // ✅ Método para obtener la instancia única
+    public static synchronized SecureDatabaseHelper getInstance(Context context) {
+        if (instance == null) {
+            instance = new SecureDatabaseHelper(context);
+        }
+        return instance;
+    }
+
 
     @Override
     public void onCreate(SQLiteDatabase db) {
@@ -41,14 +52,34 @@ public class SecureDatabaseHelper extends SQLiteOpenHelper {
         return CryptoUtils.deriveKey("MiSemillaSuperSegura123", salt);
     }
 
-    public long saveEncryptedData(String data, String pubKey) {
+    public String saveEncryptedData(String data, String pubKey) {
         SQLiteDatabase db = getWritableDatabase(getPassword());
         ContentValues cv = new ContentValues();
         cv.put(COL_DATA, data);
         cv.put(COL_KEY, pubKey);
-        long id = db.insert(TABLE, null, cv);
+        String id = String.valueOf(db.insert(TABLE, null, cv));
         db.close();
         return id;
+    }
+
+    // 🔹 Nuevo método para descifrar el último registro
+    public String decryptLastRecord(Context context) throws EncryptionException {
+        net.sqlcipher.Cursor cursor = (net.sqlcipher.Cursor) getLastRecord();
+        if (cursor != null && cursor.moveToFirst()) {
+            String encryptedData = cursor.getString(cursor.getColumnIndexOrThrow(COL_DATA));
+            cursor.close();
+
+            try {
+                HybridCryptoHelper crypto = HybridCryptoHelper.getInstance(context);
+                // No necesitas regenerar llaves, porque ya existen en el Keystore
+                return crypto.decrypt(encryptedData);
+
+            } catch (Exception e) {
+                throw EncryptionException.encryptionError("Fallo al descifrar último registro", e);
+            }
+        }
+        if (cursor != null) cursor.close();
+        return null;
     }
 
     public android.database.Cursor getLastRecord() {

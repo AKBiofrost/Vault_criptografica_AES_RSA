@@ -1,30 +1,20 @@
 package com.portafolio.key_vault_cipher;
 
+
 import android.annotation.SuppressLint;
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
+import android.app.Activity;
 import android.os.Bundle;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import android.os.Handler;
 import android.util.Log;
 import android.widget.TextView;
 
-
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
-import android.os.Bundle;
-import android.widget.TextView;
-
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.work.Data;
 import androidx.work.OneTimeWorkRequest;
 import androidx.work.WorkManager;
+
+import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -42,11 +32,11 @@ public class MainActivity extends AppCompatActivity {
         setContentView(tv);
         Log.d("MainActivity", "mPid: " + android.os.Process.myPid());
         // Registrar el receptor
-       // IntentFilter filter = new IntentFilter("com.tuapp.CRYPTO_RESULT");
-       // registerReceiver(resultReceiver, filter);
+        // IntentFilter filter = new IntentFilter("com.tuapp.CRYPTO_RESULT");
+        // registerReceiver(resultReceiver, filter);
 
         // === PASO 1: CIFRAR ===
-        cifrarTexto();
+        cifrarTexto("ahora si parece ser mas seguro javier", "0123456789012345678901234567890123456789", "VTID");
 
 
     }
@@ -81,12 +71,14 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 */
-    private void cifrarTexto() {
+    private void cifrarTexto( String data, String UUID, String seed) {
         tv.append("\n🔄 Cifrando con WorkManager...");
 
         Data inputData = new Data.Builder()
                 .putString(CryptoWorker.ACTION, CryptoWorker.ENCRYPT)
-                .putString(CryptoWorker.TEXT, "ahora si parece ser mas seguro javier")
+                .putString(CryptoWorker.TEXT, data)
+                .putString(CryptoWorker.UUID, UUID)
+                .putString(CryptoWorker.IVPARAM, seed)
                 .build();
 
         OneTimeWorkRequest work = new OneTimeWorkRequest.Builder(CryptoWorker.class)
@@ -183,4 +175,6 @@ public class MainActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
     }
+
+
 }

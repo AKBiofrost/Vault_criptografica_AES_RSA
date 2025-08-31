@@ -72,7 +72,7 @@ public class SecureCryptoService extends JobIntentService {
         try {
             if (ACTION_ENCRYPT.equals(action)) {
                 Log.d(TAG, "🔐 Iniciando cifrado...");
-                result = crypto.encrypt(text);
+                result = crypto.encrypt(text, "0123456789012345678901234567890123456789", "VTID");
                 success = result != null;
                 if (success) {
                     Log.d(TAG, "✅ Cifrado exitoso, largo: " + result.length());
