@@ -68,7 +68,7 @@ public class SecureCryptoService extends JobIntentService {
 
         String result = null;
         boolean success = false;
-
+/*
         try {
             if (ACTION_ENCRYPT.equals(action)) {
                 Log.d(TAG, "🔐 Iniciando cifrado...");
@@ -103,7 +103,7 @@ public class SecureCryptoService extends JobIntentService {
                 Arrays.fill(text.toCharArray(), '\0');
             }
         }
-
+*/
         sendResult(intent, success, result);
     }
 

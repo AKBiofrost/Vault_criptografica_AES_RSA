@@ -6,6 +6,9 @@ import android.security.keystore.KeyProperties;
 import android.util.Base64;
 import android.util.Log;
 
+import net.sqlcipher.Cursor;
+import net.sqlcipher.database.SQLiteDatabase;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -43,9 +46,9 @@ public class HybridCryptoHelper {
     private static final String TRANSFORM_RSA = "RSA/ECB/OAEPWithSHA-256AndMGF1Padding";
     private static final String TRANSFORM_AES = "AES/GCM/NoPadding";
     // Parámetros OAEP compatibles en muchos dispositivos:
-    private static final OAEPParameterSpec OAEP_SHA256_MGF1_SHA1 =
-            new OAEPParameterSpec("SHA-256", "MGF1",
-                    MGF1ParameterSpec.SHA1, PSource.PSpecified.DEFAULT);
+    private static final OAEPParameterSpec OAEP_SHA1_MGF1_SHA1 =
+            new OAEPParameterSpec("SHA-1", "MGF1", MGF1ParameterSpec.SHA1, PSource.PSpecified.DEFAULT);
+
     private KeyStore keyStore;
 
     // 🔒 instancia única
@@ -61,14 +64,16 @@ public class HybridCryptoHelper {
             throw EncryptionException.keyManagementError("Error inicializando KeyStore", e);
         }
     }
+
     // 🔒 getter thread-safe
     public static synchronized HybridCryptoHelper getInstance(Context context) throws EncryptionException {
         if (instance == null) {
-            dbHelper  = SecureDatabaseHelper.getInstance(context);
+            dbHelper = SecureDatabaseHelper.getInstance(context);
             instance = new HybridCryptoHelper();
         }
         return instance;
     }
+
     public void generateRSAKeyPair() throws EncryptionException, KeyStoreException {
         if (keyStore.containsAlias(KEY_ALIAS)) return;
 
@@ -97,46 +102,37 @@ public class HybridCryptoHelper {
         }
     }
 
-    public String encrypt(String plainText, String uuidStr, String ivParameter) throws EncryptionException {
+    public EncryptedResult encrypt(String plainText, String uuidStr, String ivParameter) throws EncryptionException {
         try {
-            // Validaciones
-            if (plainText == null || plainText.isEmpty()) {
-                throw new IllegalArgumentException("Texto plano no puede ser nulo o vacío");
-            }
-            if (uuidStr == null || uuidStr.trim().isEmpty()) {
-                uuidStr = UUID.randomUUID().toString();
-            }
+            if (plainText == null || plainText.isEmpty())
+                throw new IllegalArgumentException("Texto plano no puede ser nulo");
+            if (uuidStr == null || uuidStr.trim().isEmpty()) uuidStr = UUID.randomUUID().toString();
 
-            // 1. Generar IV usando UUID y parámetro
             byte[] iv = generateIV(uuidStr, ivParameter);
 
-            // 2. Generar clave AES
             KeyGenerator kg = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES);
             kg.init(256);
             SecretKey aesKey = kg.generateKey();
 
-            // 3. Cifrar datos con AES-GCM
             GCMParameterSpec spec = new GCMParameterSpec(128, iv);
             Cipher cipherAES = Cipher.getInstance(TRANSFORM_AES);
             cipherAES.init(Cipher.ENCRYPT_MODE, aesKey, spec);
-
             byte[] encryptedData = cipherAES.doFinal(plainText.getBytes(StandardCharsets.UTF_8));
 
-            // Separar tag de autenticación de los datos cifrados
             byte[] authTag = Arrays.copyOfRange(encryptedData, encryptedData.length - 16, encryptedData.length);
             byte[] encryptedDataWithoutTag = Arrays.copyOfRange(encryptedData, 0, encryptedData.length - 16);
 
-            // 4. Cifrar clave AES con RSA
             PublicKey publicKey = getPublicKey();
             Cipher cipherRSA = Cipher.getInstance(TRANSFORM_RSA);
-            cipherRSA.init(Cipher.ENCRYPT_MODE, publicKey, OAEP_SHA256_MGF1_SHA1);
+            cipherRSA.init(Cipher.ENCRYPT_MODE, publicKey, OAEP_SHA1_MGF1_SHA1);
             byte[] encryptedAESKey = cipherRSA.doFinal(aesKey.getEncoded());
 
-            // 5. Empaquetar todos los componentes
-            byte[] packagedData = packageEncryptedData(uuidStr, iv, authTag, encryptedAESKey, encryptedDataWithoutTag);
+            byte[] packagedData = packageEncryptedData(uuidStr, iv, authTag, encryptedDataWithoutTag);
 
-            // 6. Codificar en Base64 para transporte
-            return Base64.encodeToString(packagedData, Base64.NO_WRAP);
+            return new EncryptedResult(
+                    Base64.encodeToString(packagedData, Base64.NO_WRAP),
+                    Base64.encodeToString(encryptedAESKey, Base64.NO_WRAP)
+            );
 
         } catch (Exception e) {
             throw EncryptionException.encryptionError("Error en cifrado", e);
@@ -145,21 +141,16 @@ public class HybridCryptoHelper {
 
     public String saveAfterEncrypt(Context ctx, String plainText, String uuid, String ivParam) throws EncryptionException {
         try {
-            // 1. Obtener instancia de cripto
             HybridCryptoHelper crypto = HybridCryptoHelper.getInstance(ctx);
-
-            // 2. Asegurar par de llaves
             crypto.generateRSAKeyPair();
 
-            // 3. Cifrar el texto plano
-            String encryptedData = crypto.encrypt(plainText, uuid, ivParam);
+            EncryptedResult result = crypto.encrypt(plainText, uuid, ivParam);
 
-            // 4. Exportar clave pública en Base64/PEM
             PublicKey pubKey = crypto.getPublicKey();
             String publicKeyPem = Base64.encodeToString(pubKey.getEncoded(), Base64.NO_WRAP);
 
-            // 5. Guardar en DB cifrada
-            return dbHelper.saveEncryptedData(encryptedData, publicKeyPem);
+            // Guardar en DB cifrada con clave AES cifrada
+            return String.valueOf(dbHelper.saveEncryptedData(result.packagedDataBase64, publicKeyPem, result.encryptedAESKeyBase64));
 
         } catch (Exception e) {
             throw EncryptionException.encryptionError("Fallo en saveAfterEncrypt()", e);
@@ -168,32 +159,23 @@ public class HybridCryptoHelper {
 
 
     private byte[] packageEncryptedData(String uuidStr, byte[] iv, byte[] authTag,
-                                        byte[] encryptedAESKey, byte[] encryptedDataWithoutTag) {
+                                        byte[] encryptedDataWithoutTag) {
         try {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             DataOutputStream dos = new DataOutputStream(output);
 
-            // 1. Escribir UUID con writeUTF() (ESTO ES CLAVE)
             dos.writeUTF(uuidStr);
-
-            // 2. Componentes fijos
-            dos.write(iv);          // 12 bytes
-            dos.write(authTag);     // 16 bytes
-
-            // 3. Clave AES cifrada
-            dos.writeInt(encryptedAESKey.length);
-            dos.write(encryptedAESKey);
-
-            // 4. Datos cifrados (sin tag)
+            dos.write(iv);
+            dos.write(authTag);
             dos.writeInt(encryptedDataWithoutTag.length);
             dos.write(encryptedDataWithoutTag);
 
             return output.toByteArray();
-
         } catch (IOException e) {
             throw new RuntimeException("Error empaquetando datos", e);
         }
     }
+
 
     public String decrypt(String encryptedBase64) throws EncryptionException {
         Log.d(TAG, "decrypt() called with: encryptedBase64 = [" + encryptedBase64 + "]");
@@ -246,7 +228,7 @@ public class HybridCryptoHelper {
 
 
             Cipher cipherRSA = Cipher.getInstance(TRANSFORM_RSA);
-            cipherRSA.init(Cipher.DECRYPT_MODE, privateKey, OAEP_SHA256_MGF1_SHA1);
+            cipherRSA.init(Cipher.DECRYPT_MODE, privateKey, OAEP_SHA1_MGF1_SHA1);
             byte[] aesKeyBytes = cipherRSA.doFinal(encryptedAESKey);
 
             SecretKey aesKey = new SecretKeySpec(aesKeyBytes, "AES");
@@ -265,6 +247,7 @@ public class HybridCryptoHelper {
             throw EncryptionException.decryptionError("Error en descifrado", e);
         }
     }
+
 
     /**
      * Lee completamente un array de bytes desde el stream
@@ -294,7 +277,6 @@ public class HybridCryptoHelper {
             throw new EncryptionException("Error extrayendo UUID", e);
         }
     }
-
 
 
     public boolean verifyAuthentication(String encryptedBase64) {
@@ -382,36 +364,22 @@ public class HybridCryptoHelper {
     }
 */
 
-    public void DesencryptAsync(
-            String encryptedBase64,
+
+    public void encryptAsync(
+            String plainText,
+            String uuidStr,
+            String ivParameter,
             EncryptCallback callback
     ) {
         Executors.newSingleThreadExecutor().submit(() -> {
             try {
-                String result = decrypt(encryptedBase64);
+                EncryptedResult result = encrypt(plainText, uuidStr, ivParameter);
                 callback.onSuccess(result);
             } catch (Exception e) {
                 callback.onError(e);
             }
         });
     }
-
-
-  public void encryptAsync(
-          String plainText,
-          String uuidStr,
-          String ivParameter,
-          EncryptCallback callback
-  ) {
-      Executors.newSingleThreadExecutor().submit(() -> {
-          try {
-              String result = encrypt(plainText, uuidStr, ivParameter);
-              callback.onSuccess(result);
-          } catch (Exception e) {
-              callback.onError(e);
-          }
-      });
-  }
 
     private PublicKey getPublicKey() throws EncryptionException {
         try {
@@ -580,10 +548,53 @@ public class HybridCryptoHelper {
             Log.d(TAG, "PKCS1Padding: ❌ No soportado");
         }
     }
+
     public interface EncryptCallback {
-        void onSuccess(String encryptedBase64);
+        void onSuccess(EncryptedResult encryptedBase64);
+
         void onError(Exception e);
     }
+
+    public String rsaDecrypt(String encryptedAESKeyBase64, String encryptedDataBase64) throws EncryptionException {
+        try {
+            // Decodificar clave AES cifrada y datos cifrados
+            byte[] encryptedAESKey = Base64.decode(encryptedAESKeyBase64, Base64.NO_WRAP);
+            byte[] encryptedData = Base64.decode(encryptedDataBase64, Base64.NO_WRAP);
+
+            // Descifrar clave AES con RSA
+            PrivateKey privateKey = getPrivateKey();
+            Cipher cipherRSA = Cipher.getInstance("RSA/ECB/OAEPWithSHA-1AndMGF1Padding");
+            cipherRSA.init(Cipher.DECRYPT_MODE, privateKey);
+            byte[] aesKeyBytes = cipherRSA.doFinal(encryptedAESKey);
+            SecretKey aesKey = new SecretKeySpec(aesKeyBytes, "AES");
+
+            // Leer IV y tag del paquete de datos
+            DataInputStream dis = new DataInputStream(new ByteArrayInputStream(encryptedData));
+            String uuidStr = dis.readUTF(); // UUID
+            byte[] iv = new byte[12];
+            dis.readFully(iv);
+            byte[] authTag = new byte[16];
+            dis.readFully(authTag);
+            int dataLength = dis.readInt();
+            byte[] encryptedDataWithoutTag = new byte[dataLength];
+            dis.readFully(encryptedDataWithoutTag);
+
+            // Reconstruir ciphertext completo
+            byte[] fullEncryptedData = concat(encryptedDataWithoutTag, authTag);
+
+            // Descifrar AES-GCM
+            Cipher cipherAES = Cipher.getInstance("AES/GCM/NoPadding");
+            cipherAES.init(Cipher.DECRYPT_MODE, aesKey, new GCMParameterSpec(128, iv));
+            byte[] decryptedData = cipherAES.doFinal(fullEncryptedData);
+
+            return new String(decryptedData, StandardCharsets.UTF_8);
+
+        } catch (Exception e) {
+            Log.e(TAG, "rsaDecrypt: " + e.getMessage(), e);
+            throw EncryptionException.decryptionError("Error en rsaDecrypt()", e);
+        }
+    }
+
 
 
 }

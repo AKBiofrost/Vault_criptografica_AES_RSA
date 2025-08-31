@@ -72,7 +72,7 @@ public class CryptoWorker extends Worker {
         try {
             if (ENCRYPT.equals(action)) {
 
-                //result = String.valueOf(crypto.saveAfterEncrypt(context, text, uuid, ivParam));
+                result = crypto.saveAfterEncrypt(context, text, uuid, ivParam);
                 success = (result != null);
             } else if (DECRYPT.equals(action)) {
                 try {
