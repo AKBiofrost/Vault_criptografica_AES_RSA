@@ -1,4 +1,6 @@
-package com.portafolio.key_vault_cipher;
+package com.portafolio.key_vault_cipher.Vault.utiles;
+
+import com.portafolio.key_vault_cipher.Vault.Core.Exception.EncryptionException;
 
 import java.io.IOException;
 import java.security.InvalidKeyException;

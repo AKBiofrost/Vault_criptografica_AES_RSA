@@ -19,7 +19,7 @@
         android:theme="@style/Theme.Key_Vault_Cipher"
         tools:targetApi="31">
         <activity
-            android:name=".MainActivity"
+            android:name=".Vault.Api.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -29,8 +29,7 @@
         </activity>
         <!-- Servicio en proceso separado -->
         <service
-            android:name=".SecureCryptoService"
-            android:process=":crypto"
+            android:name=".Vault.service.SecureCryptoService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" /> <!-- Solo tu app puede llamarlo -->  <!-- Proceso aislado -->
 

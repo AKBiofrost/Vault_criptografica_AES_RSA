@@ -1,4 +1,4 @@
-package com.portafolio.key_vault_cipher;
+package com.portafolio.key_vault_cipher.Vault.Core.Model;
 
 public class EncryptedResult {
     public final String packagedDataBase64;

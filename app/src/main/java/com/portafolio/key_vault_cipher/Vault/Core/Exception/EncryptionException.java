@@ -1,4 +1,4 @@
-package com.portafolio.key_vault_cipher;
+package com.portafolio.key_vault_cipher.Vault.Core.Exception;
 
 public class EncryptionException extends Exception {
 

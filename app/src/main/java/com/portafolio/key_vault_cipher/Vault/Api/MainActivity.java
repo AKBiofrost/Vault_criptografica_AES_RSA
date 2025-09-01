@@ -1,8 +1,7 @@
-package com.portafolio.key_vault_cipher;
+package com.portafolio.key_vault_cipher.Vault.Api;
 
 
 import android.annotation.SuppressLint;
-import android.app.Activity;
 import android.os.Bundle;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -14,7 +13,7 @@ import androidx.work.Data;
 import androidx.work.OneTimeWorkRequest;
 import androidx.work.WorkManager;
 
-import java.util.UUID;
+import com.portafolio.key_vault_cipher.Vault.Core.CryptoWorker;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -36,15 +35,14 @@ public class MainActivity extends AppCompatActivity {
         // registerReceiver(resultReceiver, filter);
 
         // === PASO 1: CIFRAR ===
-        cifrarTexto("ahora si parece ser mas seguro javier", "0123456789012345678901234567890123456789", "VTID");
+        cifrarTexto("BUAJAJAJAJAJJAJAJAA; AHORA SI PERROS, TRIPLE CIFRADO HIPER SEGURO DAME LA CUCA DE TU HERMANA",
+                "0123456789012345678901234567890123456789",
+                "VTID");
 
 
     }
 
-    /**
-     * Inicia el cifrado del mensaje
-     */
-// En MainActivity, reemplaza cifrarTexto() por esto (temporal)
+
 
    /*
     private void cifrarTexto() {
@@ -71,6 +69,7 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 */
+
     private void cifrarTexto( String data, String UUID, String seed) {
         tv.append("\n🔄 Cifrando con WorkManager...");
 
